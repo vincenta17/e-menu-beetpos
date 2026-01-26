@@ -25,7 +25,12 @@ export interface CartItem {
   notes?: string;
 }
 
+export type OrderMode = 'DINEIN' | 'TAKEAWAY';
+
 export interface CartState {
   items: CartItem[];
   tableNumber: string | null;
+  outletId: string | null;
+  tenantId: string | null;
+  orderMode: OrderMode | null;
 }

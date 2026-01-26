@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { CartProvider } from './context/CartContext';
 import LandingPage from './pages/LandingPage';
 import MenuPage from './pages/MenuPage';
@@ -13,7 +13,7 @@ function App() {
     <BrowserRouter>
       <CartProvider>
         <Routes>
-          <Route path="/" element={<MenuPage />} />
+          <Route path="/" element={<Navigate to="/menu" replace />} />
           <Route path="/landing" element={<LandingPage />} />
           <Route path="/menu" element={<MenuPage />} />
           <Route path="/product/:id" element={<ProductDetailPage />} />

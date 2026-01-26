@@ -23,7 +23,7 @@ export default function ProductDetailPage() {
             <div className="product-detail-page">
                 <div className="not-found glass-card">
                     <h2>Produk tidak ditemukan</h2>
-                    <button onClick={() => navigate('/menu')} className="back-button">
+                    <button onClick={() => navigate(-1)} className="back-button">
                         Kembali ke Menu
                     </button>
                 </div>
@@ -68,7 +68,7 @@ export default function ProductDetailPage() {
                 </div>
             )}
 
-            <button className="back-nav" onClick={() => navigate('/menu')}>
+            <button className="back-nav" onClick={() => navigate(-1)}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M19 12H5M12 19l-7-7 7-7" />
                 </svg>

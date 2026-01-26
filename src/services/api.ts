@@ -1,14 +1,23 @@
 // API Service for E-Menu Beetpos
-import type { Product } from '../types';
+import type { Product, OrderMode } from '../types';
 
 // API Configuration
 const BASE_URL = import.meta.env.VITE_API_BASE_URL;
+const API_KEY = import.meta.env.VITE_API_KEY;
 
-// Headers
-const getHeaders = () => ({
-    'x-api-key': import.meta.env.VITE_API_KEY,
-    'x-tenant-id': import.meta.env.VITE_TENANT_ID,
-    'x-outlet-id': import.meta.env.VITE_OUTLET_ID,
+// Context params interface
+export interface ApiContextParams {
+    tenantId: string | null;
+    outletId: string | null;
+    tableId?: string | null;
+    orderMode?: OrderMode | null;
+}
+
+// Headers - now accepts context params with fallback to ENV
+const getHeaders = (ctx?: ApiContextParams) => ({
+    'x-api-key': API_KEY,
+    'x-tenant-id': ctx?.tenantId || import.meta.env.VITE_TENANT_ID || '',
+    'x-outlet-id': ctx?.outletId || import.meta.env.VITE_OUTLET_ID || '',
     'Content-Type': 'application/json'
 });
 
@@ -26,11 +35,11 @@ export interface ApiCategoriesResponse {
 }
 
 // Fetch categories from API
-export async function fetchCategories(): Promise<ApiCategory[] | Error> {
+export async function fetchCategories(ctx?: ApiContextParams): Promise<ApiCategory[] | Error> {
     try {
         const response = await fetch(`${BASE_URL}/categories`, {
             method: 'GET',
-            headers: getHeaders()
+            headers: getHeaders(ctx)
         });
 
         if (!response.ok) {
@@ -69,6 +78,7 @@ export interface ProductsQueryParams {
     order?: 'asc' | 'desc';
     search?: string;
     categoryId?: string;
+    ctx?: ApiContextParams;
 }
 
 export async function fetchProducts(params?: ProductsQueryParams): Promise<ApiProduct[]> {
@@ -85,7 +95,7 @@ export async function fetchProducts(params?: ProductsQueryParams): Promise<ApiPr
 
         const response = await fetch(url, {
             method: 'GET',
-            headers: getHeaders()
+            headers: getHeaders(params?.ctx)
         });
 
         if (!response.ok) {
@@ -136,14 +146,14 @@ export interface TransactionResponse {
 }
 
 // Create transaction (Real API)
-export async function createTransaction(request: CreateTransactionRequest): Promise<TransactionResponse> {
+export async function createTransaction(request: CreateTransactionRequest, ctx?: ApiContextParams): Promise<TransactionResponse> {
     const TRANSACTION_API_URL = `${BASE_URL}/transactions/pos`;
 
-    // Get headers fresh
+    // Get headers from context params or ENV fallback
     const headers = {
-        'x-api-key': import.meta.env.VITE_API_KEY,
-        'x-tenant-id': import.meta.env.VITE_TENANT_ID,
-        'x-outlet-id': import.meta.env.VITE_OUTLET_ID,
+        'x-api-key': API_KEY,
+        'x-tenant-id': ctx?.tenantId || import.meta.env.VITE_TENANT_ID || '',
+        'x-outlet-id': ctx?.outletId || import.meta.env.VITE_OUTLET_ID || '',
         'Content-Type': 'application/json'
     };
 
@@ -158,10 +168,11 @@ export async function createTransaction(request: CreateTransactionRequest): Prom
     }));
 
     // Build request body with snake_case format that API expects
+    // Use context params for table_id and order_type (from query URL)
     const requestBody = {
         table_number: request.tableNumber || '1',
-        table_id: import.meta.env.VITE_TABEL_ID || request.tableId || '1', // Required by API - use env variable
-        order_type: request.orderType || 'DINEIN', // Required by API - must be "DINEIN"
+        table_id: ctx?.tableId || request.tableId || import.meta.env.VITE_TABEL_ID || '1', // From query URL or fallback to ENV
+        order_type: ctx?.orderMode || request.orderType || 'DINEIN', // From query URL or fallback
         items: transformedItems,
         subtotal: request.subtotal,
         tax: request.tax,
@@ -211,11 +222,11 @@ export interface DokuPaymentRequest {
     customerName?: string;
 }
 
-export async function generateDokuPayment(request: DokuPaymentRequest): Promise<TransactionResponse> {
+export async function generateDokuPayment(request: DokuPaymentRequest, ctx?: ApiContextParams): Promise<TransactionResponse> {
     try {
         const response = await fetch(`${BASE_URL}/payment/doku`, {
             method: 'POST',
-            headers: getHeaders(),
+            headers: getHeaders(ctx),
             body: JSON.stringify({
                 invoice_number: request.invoiceNumber,
                 amount: request.amount,
@@ -247,11 +258,11 @@ export async function generateDokuPayment(request: DokuPaymentRequest): Promise<
 }
 
 // Check transaction status
-export async function checkTransactionStatus(transactionId: string): Promise<TransactionResponse> {
+export async function checkTransactionStatus(transactionId: string, ctx?: ApiContextParams): Promise<TransactionResponse> {
     try {
         const response = await fetch(`${BASE_URL}/transactions/${transactionId}`, {
             method: 'GET',
-            headers: getHeaders()
+            headers: getHeaders(ctx)
         });
 
         const result = await response.json();
@@ -304,11 +315,13 @@ export function subscribeToTransaction(
     transactionId: string,
     onPaymentStatus: (data: PaymentStatusEvent['data']) => void,
     onCompleted?: (message: string) => void,
-    onError?: (error: any) => void
+    onError?: (error: any) => void,
+    ctx?: ApiContextParams
 ): EventSource {
-    const apiKey = encodeURIComponent(import.meta.env.VITE_API_KEY);
-    const tenantId = encodeURIComponent(import.meta.env.VITE_TENANT_ID);
-    const outletId = encodeURIComponent(import.meta.env.VITE_OUTLET_ID);
+    const apiKey = encodeURIComponent(API_KEY);
+    // Use context params or fallback to ENV variables
+    const tenantId = encodeURIComponent(ctx?.tenantId || import.meta.env.VITE_TENANT_ID || '');
+    const outletId = encodeURIComponent(ctx?.outletId || import.meta.env.VITE_OUTLET_ID || '');
 
     const url = `${BASE_URL}/transactions/${transactionId}/subscribe?apiKey=${apiKey}&tenantId=${tenantId}&outletId=${outletId}`;
 

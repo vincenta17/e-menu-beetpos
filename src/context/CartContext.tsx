@@ -1,9 +1,13 @@
-import { createContext, useContext, useReducer } from 'react';
+import { createContext, useContext, useReducer, useCallback } from 'react';
 import type { ReactNode } from 'react';
-import type { CartItem, CartState, Product } from '../types';
+import type { CartItem, CartState, Product, OrderMode } from '../types';
 
 type CartAction =
     | { type: 'SET_TABLE'; tableNumber: string }
+    | { type: 'SET_OUTLET'; outletId: string }
+    | { type: 'SET_TENANT'; tenantId: string }
+    | { type: 'SET_ORDER_MODE'; orderMode: OrderMode }
+    | { type: 'SET_QUERY_PARAMS'; tableNumber: string | null; outletId: string; tenantId: string; orderMode: OrderMode }
     | { type: 'ADD_ITEM'; item: CartItem }
     | { type: 'REMOVE_ITEM'; productId: string; size?: string }
     | { type: 'UPDATE_QUANTITY'; productId: string; size?: string; quantity: number }
@@ -12,6 +16,10 @@ type CartAction =
 interface CartContextType {
     state: CartState;
     setTable: (tableNumber: string) => void;
+    setOutlet: (outletId: string) => void;
+    setTenant: (tenantId: string) => void;
+    setOrderMode: (orderMode: OrderMode) => void;
+    setQueryParams: (tableNumber: string | null, outletId: string, tenantId: string, orderMode: OrderMode) => void;
     addItem: (product: Product, quantity: number, size?: string, notes?: string) => void;
     removeItem: (productId: string, size?: string) => void;
     updateQuantity: (productId: string, size: string | undefined, quantity: number) => void;
@@ -34,7 +42,10 @@ const getInitialState = (): CartState => {
     }
     return {
         items: [],
-        tableNumber: null
+        tableNumber: null,
+        outletId: null,
+        tenantId: null,
+        orderMode: null
     };
 };
 
@@ -51,6 +62,28 @@ function cartReducer(state: CartState, action: CartAction): CartState {
     switch (action.type) {
         case 'SET_TABLE':
             newState = { ...state, tableNumber: action.tableNumber };
+            break;
+
+        case 'SET_OUTLET':
+            newState = { ...state, outletId: action.outletId };
+            break;
+
+        case 'SET_TENANT':
+            newState = { ...state, tenantId: action.tenantId };
+            break;
+
+        case 'SET_ORDER_MODE':
+            newState = { ...state, orderMode: action.orderMode };
+            break;
+
+        case 'SET_QUERY_PARAMS':
+            newState = {
+                ...state,
+                tableNumber: action.tableNumber,
+                outletId: action.outletId,
+                tenantId: action.tenantId,
+                orderMode: action.orderMode
+            };
             break;
 
         case 'ADD_ITEM': {
@@ -119,9 +152,25 @@ const CartContext = createContext<CartContextType | undefined>(undefined);
 export function CartProvider({ children }: { children: ReactNode }) {
     const [state, dispatch] = useReducer(cartReducer, null, getInitialState);
 
-    const setTable = (tableNumber: string) => {
+    const setTable = useCallback((tableNumber: string) => {
         dispatch({ type: 'SET_TABLE', tableNumber });
-    };
+    }, []);
+
+    const setOutlet = useCallback((outletId: string) => {
+        dispatch({ type: 'SET_OUTLET', outletId });
+    }, []);
+
+    const setTenant = useCallback((tenantId: string) => {
+        dispatch({ type: 'SET_TENANT', tenantId });
+    }, []);
+
+    const setOrderMode = useCallback((orderMode: OrderMode) => {
+        dispatch({ type: 'SET_ORDER_MODE', orderMode });
+    }, []);
+
+    const setQueryParams = useCallback((tableNumber: string | null, outletId: string, tenantId: string, orderMode: OrderMode) => {
+        dispatch({ type: 'SET_QUERY_PARAMS', tableNumber, outletId, tenantId, orderMode });
+    }, []);
 
     const addItem = (product: Product, quantity: number, size?: string, notes?: string) => {
         dispatch({ type: 'ADD_ITEM', item: { product, quantity, size, notes } });
@@ -160,6 +209,10 @@ export function CartProvider({ children }: { children: ReactNode }) {
         <CartContext.Provider value={{
             state,
             setTable,
+            setOutlet,
+            setTenant,
+            setOrderMode,
+            setQueryParams,
             addItem,
             removeItem,
             updateQuantity,

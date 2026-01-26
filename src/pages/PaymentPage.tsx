@@ -1,7 +1,7 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
-import { createTransaction, generateDokuPayment, subscribeToTransaction, type PaymentStatusEvent } from '../services/api';
+import { createTransaction, generateDokuPayment, subscribeToTransaction, type PaymentStatusEvent, type ApiContextParams } from '../services/api';
 import PaymentSuccessModal from '../components/PaymentSuccessModal';
 
 export default function PaymentPage() {
@@ -14,6 +14,14 @@ export default function PaymentPage() {
     const [successData, setSuccessData] = useState<PaymentStatusEvent['data'] | null>(null);
 
     const total = getTotal();
+
+    // Create API context params from cart state
+    const apiContext: ApiContextParams = useMemo(() => ({
+        tenantId: state.tenantId,
+        outletId: state.outletId,
+        tableId: state.tableNumber,
+        orderMode: state.orderMode
+    }), [state.tenantId, state.outletId, state.tableNumber, state.orderMode]);
 
     // Create transaction and get DOKU URL on mount
     useEffect(() => {
@@ -48,13 +56,13 @@ export default function PaymentPage() {
             const response = await createTransaction({
                 tableNumber: tableNum,
                 tableId: tableNum,
-                orderType: 'DINEIN',
+                orderType: apiContext.orderMode || 'DINEIN',
                 items: transactionItems,
                 subtotal: total,
                 tax: 0,
                 total: total,
                 paymentMethod: 'qris'
-            });
+            }, apiContext);
 
             if (response.success && response.data) {
                 // Set transaction ID for real-time updates
@@ -76,7 +84,7 @@ export default function PaymentPage() {
                         invoiceNumber: txNumber,
                         amount: total,
                         customerName: `Table ${tableNum}`
-                    });
+                    }, apiContext);
 
                     console.log('DOKU Response:', paymentResponse);
 
@@ -156,32 +164,40 @@ export default function PaymentPage() {
             },
             (error) => {
                 console.warn('[PaymentPage] SSE Connection issue:', error);
-            }
+            },
+            apiContext
         );
 
         eventSourceRef.current = eventSource;
 
         return () => {
-            if (!isPaymentSuccessRef.current) {
-                console.log('[PaymentPage] Cleanup - closing EventSource');
-                eventSource.close();
-                eventSourceRef.current = null;
-            }
+            console.log('[PaymentPage] Cleanup - closing EventSource');
+            eventSource.close();
+            eventSourceRef.current = null;
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [transactionId]); // Only depend on transactionId
 
     const handleBackHome = () => {
-        navigate('/');
+        // Redirect to original URL with query params if available
+        const originalUrl = sessionStorage.getItem('beetpos-original-url');
+        if (originalUrl) {
+            navigate(originalUrl);
+        } else {
+            navigate('/menu');
+        }
     };
 
 
     const handleCloseIframe = () => {
         // User closed the payment popup. 
-        // We can navigate back to cart or root, or just hide it? 
-        // Request said: "jangan masuk ke payment success checkout doku", and "tombol close"
-        // I'll assume navigating to home or cart is safest so they can restart or check status properly.
-        navigate('/');
+        // Redirect to original URL with query params
+        const originalUrl = sessionStorage.getItem('beetpos-original-url');
+        if (originalUrl) {
+            navigate(originalUrl);
+        } else {
+            navigate('/menu');
+        }
     };
 
     // Loading state - show while creating transaction
