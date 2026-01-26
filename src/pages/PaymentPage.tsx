@@ -1,228 +1,278 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
+import { createTransaction, generateDokuPayment, subscribeToTransaction, type PaymentStatusEvent } from '../services/api';
+import PaymentSuccessModal from '../components/PaymentSuccessModal';
 
 export default function PaymentPage() {
     const navigate = useNavigate();
     const { state, getTotal, clearCart } = useCart();
-    const [timeLeft, setTimeLeft] = useState(300); // 5 minutes
-    const [paymentStatus, setPaymentStatus] = useState<'pending' | 'success' | 'expired'>('pending');
+    const [paymentStatus, setPaymentStatus] = useState<'loading' | 'pending' | 'success' | 'error'>('loading');
+    const [errorMessage, setErrorMessage] = useState<string>('');
+    const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
+    const [transactionId, setTransactionId] = useState<string | null>(null);
+    const [successData, setSuccessData] = useState<PaymentStatusEvent['data'] | null>(null);
 
-    const totalWithTax = getTotal() * 1.1;
+    const total = getTotal();
 
+    // Create transaction and get DOKU URL on mount
     useEffect(() => {
-        if (paymentStatus !== 'pending') return;
+        const initPayment = async () => {
+            if (state.items.length === 0) {
+                navigate('/cart');
+                return;
+            }
 
-        const timer = setInterval(() => {
-            setTimeLeft(prev => {
-                if (prev <= 1) {
-                    setPaymentStatus('expired');
-                    return 0;
+            // Build transaction items
+            const transactionItems = state.items.map(item => {
+                let itemPrice = item.product.price;
+                if (item.size && item.product.sizes) {
+                    const sizeOption = item.product.sizes.find(s => s.name === item.size);
+                    if (sizeOption) {
+                        itemPrice += sizeOption.priceAdd;
+                    }
                 }
-                return prev - 1;
+                return {
+                    productId: item.product.id,
+                    productName: item.product.name,
+                    quantity: item.quantity,
+                    price: itemPrice,
+                    notes: item.notes,
+                    size: item.size
+                };
             });
-        }, 1000);
 
-        return () => clearInterval(timer);
-    }, [paymentStatus]);
+            // 1. Create Transaction Record
+            const tableNum = state.tableNumber || '1';
 
-    const formatTime = (seconds: number) => {
-        const mins = Math.floor(seconds / 60);
-        const secs = seconds % 60;
-        return `${mins}:${secs.toString().padStart(2, '0')}`;
-    };
+            const response = await createTransaction({
+                tableNumber: tableNum,
+                tableId: tableNum,
+                orderType: 'DINEIN',
+                items: transactionItems,
+                subtotal: total,
+                tax: 0,
+                total: total,
+                paymentMethod: 'qris'
+            });
 
-    const formatPrice = (price: number) => {
-        return new Intl.NumberFormat('id-ID', {
-            style: 'currency',
-            currency: 'IDR',
-            minimumFractionDigits: 0
-        }).format(price);
-    };
+            if (response.success && response.data) {
+                // Set transaction ID for real-time updates
+                if (response.data.id) {
+                    setTransactionId(response.data.id);
+                }
 
-    const handleSimulatePayment = () => {
-        setPaymentStatus('success');
-        setTimeout(() => {
-            clearCart();
-        }, 2000);
-    };
+                // Get invoice number from response
+                const txNumber = response.data.transactionNumber
+                    || (response.data as any).invoice_number
+                    || (response.data as any).invoiceNumber
+                    || `INV-${Date.now()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
 
-    const handleBackToMenu = () => {
-        clearCart();
-        navigate('/menu');
-    };
+                console.log('Invoice Number:', txNumber);
+
+                // 2. Generate DOKU Payment
+                try {
+                    const paymentResponse = await generateDokuPayment({
+                        invoiceNumber: txNumber,
+                        amount: total,
+                        customerName: `Table ${tableNum}`
+                    });
+
+                    console.log('DOKU Response:', paymentResponse);
+
+                    if (paymentResponse.success && paymentResponse.data) {
+                        const dokuData = paymentResponse.data as any;
+                        const checkoutUrl = dokuData.response?.payment?.url;
+
+                        if (checkoutUrl) {
+                            console.log('Setting DOKU checkout URL:', checkoutUrl);
+                            setPaymentUrl(checkoutUrl);
+                            setPaymentStatus('pending'); // Ready to show iframe
+                        } else {
+                            // Fallback logging
+                            console.error('No checkout URL found in response', dokuData);
+                            setErrorMessage('URL pembayaran tidak ditemukan dari DOKU');
+                            setPaymentStatus('error');
+                        }
+                    } else {
+                        setErrorMessage(paymentResponse.error || 'Gagal membuat pembayaran');
+                        setPaymentStatus('error');
+                    }
+                } catch (err) {
+                    console.error('Error calling payment gateway:', err);
+                    setErrorMessage('Terjadi kesalahan saat menghubungi payment gateway');
+                    setPaymentStatus('error');
+                }
+            } else {
+                setErrorMessage(response.error || 'Gagal membuat transaksi');
+                setPaymentStatus('error');
+            }
+        };
+
+        if (!paymentUrl) {
+            initPayment();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []); // Run once
 
     const handleRetry = () => {
-        setTimeLeft(300);
-        setPaymentStatus('pending');
+        window.location.reload();
     };
 
-    if (paymentStatus === 'success') {
+    // Listen for payment status updates
+    const eventSourceRef = useRef<EventSource | null>(null);
+    const isPaymentSuccessRef = useRef(false);
+
+    useEffect(() => {
+        if (!transactionId) return;
+        // Don't create new connection if already successful
+        if (isPaymentSuccessRef.current) {
+            console.log('[PaymentPage] Already successful, skipping SSE subscription');
+            return;
+        }
+        // Also check if we already have an active connection
+        if (eventSourceRef.current) {
+            console.log('[PaymentPage] Already have active SSE connection, skipping');
+            return;
+        }
+
+        console.log('[PaymentPage] Subscribing to transaction updates:', transactionId);
+
+        const eventSource = subscribeToTransaction(
+            transactionId,
+            (data) => {
+                console.log('[PaymentPage] ✅ Payment Status PAID received:', data);
+                // Save data but DON'T close yet - wait for payment-completed
+                setSuccessData(data);
+                setPaymentStatus('success');
+                clearCart();
+            },
+            (message) => {
+                console.log('[PaymentPage] ✅ Payment Completed - NOW closing SSE:', message);
+                isPaymentSuccessRef.current = true;
+                // Close connection only after payment-completed
+                eventSource.close();
+                eventSourceRef.current = null;
+            },
+            (error) => {
+                console.warn('[PaymentPage] SSE Connection issue:', error);
+            }
+        );
+
+        eventSourceRef.current = eventSource;
+
+        return () => {
+            if (!isPaymentSuccessRef.current) {
+                console.log('[PaymentPage] Cleanup - closing EventSource');
+                eventSource.close();
+                eventSourceRef.current = null;
+            }
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [transactionId]); // Only depend on transactionId
+
+    const handleBackHome = () => {
+        navigate('/');
+    };
+
+
+    const handleCloseIframe = () => {
+        // User closed the payment popup. 
+        // We can navigate back to cart or root, or just hide it? 
+        // Request said: "jangan masuk ke payment success checkout doku", and "tombol close"
+        // I'll assume navigating to home or cart is safest so they can restart or check status properly.
+        navigate('/');
+    };
+
+    // Loading state - show while creating transaction
+    if (paymentStatus === 'loading') {
         return (
             <div className="payment-page">
-                <div className="payment-success glass-card">
-                    <div className="success-animation">
-                        <div className="success-circle">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                                <path d="M20 6L9 17l-5-5" />
-                            </svg>
-                        </div>
-                    </div>
-                    <h1>Pembayaran Berhasil!</h1>
-                    <p>Terima kasih atas pesanan Anda</p>
-                    <div className="order-info">
-                        <p>Meja #{state.tableNumber}</p>
-                        <p className="order-total">{formatPrice(totalWithTax)}</p>
-                    </div>
-                    <p className="order-note">Pesanan sedang disiapkan...</p>
-                    <button className="back-menu-btn" onClick={handleBackToMenu}>
-                        Kembali ke Menu
+                <div className="loading-container glass-card">
+                    <div className="loading-spinner"></div>
+                    <p>Memproses pembayaran...</p>
+                </div>
+            </div>
+        );
+    }
+
+    // Pending state - Show Iframe if URL exists
+    if (paymentStatus === 'pending' && paymentUrl) {
+        return (
+            <div style={{
+                position: 'fixed',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                zIndex: 9999,
+                backgroundColor: '#fff',
+                display: 'flex',
+                flexDirection: 'column'
+            }}>
+                <div style={{
+                    padding: '10px 16px',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    borderBottom: '1px solid #eee',
+                    backgroundColor: '#fff',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
+                }}>
+                    <span style={{ fontWeight: 600, fontSize: '1rem' }}>Pembayaran DOKU</span>
+                    <button
+                        onClick={handleCloseIframe}
+                        style={{
+                            background: 'none',
+                            border: 'none',
+                            fontSize: '24px',
+                            cursor: 'pointer',
+                            color: '#333',
+                            padding: '4px 8px',
+                            borderRadius: '4px'
+                        }}
+                    >
+                        ✕
                     </button>
                 </div>
+                <iframe
+                    src={paymentUrl}
+                    style={{
+                        flex: 1,
+                        width: '100%',
+                        border: 'none'
+                    }}
+                    title="DOKU Payment"
+                />
             </div>
         );
     }
 
-    if (paymentStatus === 'expired') {
+    // Success state
+    if (paymentStatus === 'success' && successData) {
         return (
-            <div className="payment-page">
-                <div className="payment-expired glass-card">
-                    <div className="expired-icon">⏰</div>
-                    <h1>Waktu Habis</h1>
-                    <p>QR Code pembayaran telah kedaluwarsa</p>
-                    <div className="expired-actions">
-                        <button className="retry-btn" onClick={handleRetry}>
-                            Coba Lagi
-                        </button>
-                        <button className="cancel-btn" onClick={() => navigate('/cart')}>
-                            Kembali ke Keranjang
-                        </button>
-                    </div>
-                </div>
-            </div>
+            <PaymentSuccessModal
+                data={successData}
+                onClose={handleBackHome}
+            />
         );
     }
 
+    // Error state
     return (
         <div className="payment-page">
-            <header className="payment-header glass-card">
-                <button className="back-nav" onClick={() => navigate('/cart')}>
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M19 12H5M12 19l-7-7 7-7" />
-                    </svg>
-                </button>
-                <h1 className="header-title">Pembayaran QRIS</h1>
-                <div className="header-spacer"></div>
-            </header>
-
-            <div className="payment-content">
-                <div className="qr-container glass-card">
-                    <div className="qr-header">
-                        <img
-                            src="https://upload.wikimedia.org/wikipedia/commons/thumb/e/e1/QRIS_logo.svg/1200px-QRIS_logo.svg.png"
-                            alt="QRIS"
-                            className="qris-logo"
-                        />
-                    </div>
-
-                    <div className="qr-code">
-                        {/* Demo QR Code - In production, this would be generated dynamically */}
-                        <svg viewBox="0 0 200 200" className="qr-svg">
-                            <rect x="10" y="10" width="40" height="40" fill="#1a1a2e" />
-                            <rect x="15" y="15" width="30" height="30" fill="white" />
-                            <rect x="20" y="20" width="20" height="20" fill="#1a1a2e" />
-
-                            <rect x="150" y="10" width="40" height="40" fill="#1a1a2e" />
-                            <rect x="155" y="15" width="30" height="30" fill="white" />
-                            <rect x="160" y="20" width="20" height="20" fill="#1a1a2e" />
-
-                            <rect x="10" y="150" width="40" height="40" fill="#1a1a2e" />
-                            <rect x="15" y="155" width="30" height="30" fill="white" />
-                            <rect x="20" y="160" width="20" height="20" fill="#1a1a2e" />
-
-                            {/* Random pattern for demo */}
-                            <rect x="60" y="10" width="10" height="10" fill="#1a1a2e" />
-                            <rect x="80" y="10" width="10" height="10" fill="#1a1a2e" />
-                            <rect x="100" y="10" width="10" height="10" fill="#1a1a2e" />
-                            <rect x="120" y="10" width="10" height="10" fill="#1a1a2e" />
-
-                            <rect x="60" y="30" width="10" height="10" fill="#1a1a2e" />
-                            <rect x="90" y="30" width="10" height="10" fill="#1a1a2e" />
-                            <rect x="110" y="30" width="10" height="10" fill="#1a1a2e" />
-                            <rect x="130" y="30" width="10" height="10" fill="#1a1a2e" />
-
-                            <rect x="10" y="60" width="10" height="10" fill="#1a1a2e" />
-                            <rect x="30" y="60" width="10" height="10" fill="#1a1a2e" />
-                            <rect x="60" y="60" width="10" height="10" fill="#1a1a2e" />
-                            <rect x="80" y="60" width="10" height="10" fill="#1a1a2e" />
-                            <rect x="100" y="60" width="10" height="10" fill="#1a1a2e" />
-                            <rect x="120" y="60" width="10" height="10" fill="#1a1a2e" />
-                            <rect x="150" y="60" width="10" height="10" fill="#1a1a2e" />
-                            <rect x="180" y="60" width="10" height="10" fill="#1a1a2e" />
-
-                            <rect x="10" y="80" width="10" height="10" fill="#1a1a2e" />
-                            <rect x="40" y="80" width="10" height="10" fill="#1a1a2e" />
-                            <rect x="70" y="80" width="10" height="10" fill="#1a1a2e" />
-                            <rect x="90" y="80" width="10" height="10" fill="#1a1a2e" />
-                            <rect x="110" y="80" width="10" height="10" fill="#1a1a2e" />
-                            <rect x="140" y="80" width="10" height="10" fill="#1a1a2e" />
-                            <rect x="160" y="80" width="10" height="10" fill="#1a1a2e" />
-                            <rect x="180" y="80" width="10" height="10" fill="#1a1a2e" />
-
-                            <rect x="60" y="100" width="80" height="10" fill="#1a1a2e" />
-
-                            <rect x="10" y="120" width="10" height="10" fill="#1a1a2e" />
-                            <rect x="40" y="120" width="10" height="10" fill="#1a1a2e" />
-                            <rect x="70" y="120" width="10" height="10" fill="#1a1a2e" />
-                            <rect x="90" y="120" width="10" height="10" fill="#1a1a2e" />
-                            <rect x="110" y="120" width="10" height="10" fill="#1a1a2e" />
-                            <rect x="140" y="120" width="10" height="10" fill="#1a1a2e" />
-                            <rect x="160" y="120" width="10" height="10" fill="#1a1a2e" />
-                            <rect x="180" y="120" width="10" height="10" fill="#1a1a2e" />
-
-                            <rect x="60" y="150" width="10" height="10" fill="#1a1a2e" />
-                            <rect x="80" y="150" width="10" height="10" fill="#1a1a2e" />
-                            <rect x="100" y="150" width="10" height="10" fill="#1a1a2e" />
-                            <rect x="120" y="150" width="10" height="10" fill="#1a1a2e" />
-                            <rect x="150" y="150" width="10" height="10" fill="#1a1a2e" />
-                            <rect x="170" y="150" width="10" height="10" fill="#1a1a2e" />
-
-                            <rect x="60" y="170" width="10" height="10" fill="#1a1a2e" />
-                            <rect x="90" y="170" width="10" height="10" fill="#1a1a2e" />
-                            <rect x="110" y="170" width="10" height="10" fill="#1a1a2e" />
-                            <rect x="130" y="170" width="10" height="10" fill="#1a1a2e" />
-                            <rect x="160" y="180" width="10" height="10" fill="#1a1a2e" />
-                            <rect x="180" y="180" width="10" height="10" fill="#1a1a2e" />
-                        </svg>
-                    </div>
-
-                    <div className="payment-amount">
-                        <span className="amount-label">Total Pembayaran</span>
-                        <span className="amount-value">{formatPrice(totalWithTax)}</span>
-                    </div>
-
-                    <div className="timer-container">
-                        <span className="timer-label">Berlaku dalam</span>
-                        <span className={`timer-value ${timeLeft < 60 ? 'warning' : ''}`}>
-                            {formatTime(timeLeft)}
-                        </span>
-                    </div>
+            <div className="payment-expired glass-card">
+                <div className="expired-icon">❌</div>
+                <h1>Terjadi Kesalahan</h1>
+                <p>{errorMessage}</p>
+                <div className="expired-actions">
+                    <button className="retry-btn" onClick={handleRetry}>
+                        Coba Lagi
+                    </button>
+                    <button className="cancel-btn" onClick={() => navigate('/cart')}>
+                        Kembali ke Keranjang
+                    </button>
                 </div>
-
-                <div className="payment-instructions glass-card">
-                    <h3>Cara Pembayaran:</h3>
-                    <ol>
-                        <li>Buka aplikasi e-wallet atau m-banking Anda</li>
-                        <li>Pilih menu Scan/Pay dengan QRIS</li>
-                        <li>Scan QR Code di atas</li>
-                        <li>Konfirmasi pembayaran</li>
-                    </ol>
-                </div>
-
-                {/* Demo: Simulate payment button */}
-                <button className="simulate-payment-btn" onClick={handleSimulatePayment}>
-                    [Demo] Simulasi Pembayaran Berhasil
-                </button>
             </div>
         </div>
     );

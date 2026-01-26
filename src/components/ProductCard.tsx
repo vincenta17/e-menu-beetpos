@@ -1,4 +1,7 @@
+import { useState } from 'react';
 import type { ApiProduct } from '../services/api';
+import { useCart } from '../context/CartContext';
+import QuickAddModal from './QuickAddModal';
 
 interface ProductCardProps {
     product: ApiProduct;
@@ -6,6 +9,10 @@ interface ProductCardProps {
 }
 
 export default function ProductCard({ product, onClick }: ProductCardProps) {
+    const { addItem } = useCart();
+    const [showModal, setShowModal] = useState(false);
+    const [showSuccess, setShowSuccess] = useState(false);
+
     // Defensive check for missing product
     if (!product) return null;
 
@@ -26,36 +33,87 @@ export default function ProductCard({ product, onClick }: ProductCardProps) {
         return '📦';
     };
 
+    // Get placeholder image - blank frame with category icon
+    const getPlaceholderImage = () => {
+        // Return a simple gray placeholder with icon
+        return 'data:image/svg+xml,' + encodeURIComponent(`
+            <svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300">
+                <rect width="400" height="300" fill="#f0f0f0"/>
+                <rect x="150" y="100" width="100" height="100" rx="10" fill="#e0e0e0"/>
+                <path d="M185 130 L215 130 M200 115 L200 145" stroke="#bbb" stroke-width="4" stroke-linecap="round"/>
+                <text x="200" y="230" font-family="Arial" font-size="14" fill="#999" text-anchor="middle">No Image</text>
+            </svg>
+        `.trim());
+    };
+
+    const productImage = product.image || getPlaceholderImage();
+
+    const handleAddClick = (e: React.MouseEvent) => {
+        e.stopPropagation(); // Prevent card click
+        setShowModal(true);
+    };
+
+    const handleAddToCart = (notes: string, quantity: number) => {
+        // Convert ApiProduct to Product format for cart
+        const cartProduct = {
+            id: String(product.id),
+            name: product.name,
+            description: product.description,
+            price: product.price,
+            image: product.image,
+            category: product.category as 'food' | 'drink' | 'combo',
+            sizes: product.sizes
+        };
+
+        addItem(cartProduct, quantity, undefined, notes || undefined);
+
+        // Show success indicator
+        setShowSuccess(true);
+        setTimeout(() => setShowSuccess(false), 2000);
+    };
+
     return (
-        <div className="product-card glass-card" onClick={onClick}>
-            <div className="card-image-container">
-                {product.image ? (
+        <>
+            <div className="product-card glass-card" onClick={onClick}>
+                <div className="card-image-container">
                     <img
-                        src={product.image}
+                        src={productImage}
                         alt={product.name || 'Product'}
                         className="card-image"
                         loading="lazy"
                     />
-                ) : (
-                    <div className="card-image-placeholder">📷</div>
-                )}
-                <div className="card-category-badge">
-                    {getCategoryEmoji(product.category)}
+                    <div className="card-category-badge">
+                        {getCategoryEmoji(product.category)}
+                    </div>
+                    {showSuccess && (
+                        <div className="card-success-badge">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                                <path d="M20 6L9 17l-5-5" />
+                            </svg>
+                        </div>
+                    )}
+                </div>
+                <div className="card-content">
+                    <h3 className="card-title">{product.name || 'Unnamed Product'}</h3>
+                    <p className="card-description">{product.description || ''}</p>
+                    <div className="card-footer">
+                        <span className="card-price">{formatPrice(product.price)}</span>
+                        <button className="card-add-btn" onClick={handleAddClick}>
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <circle cx="12" cy="12" r="10" />
+                                <path d="M12 8v8M8 12h8" />
+                            </svg>
+                        </button>
+                    </div>
                 </div>
             </div>
-            <div className="card-content">
-                <h3 className="card-title">{product.name || 'Unnamed Product'}</h3>
-                <p className="card-description">{product.description || ''}</p>
-                <div className="card-footer">
-                    <span className="card-price">{formatPrice(product.price)}</span>
-                    <span className="card-action">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <circle cx="12" cy="12" r="10" />
-                            <path d="M12 8v8M8 12h8" />
-                        </svg>
-                    </span>
-                </div>
-            </div>
-        </div>
+
+            <QuickAddModal
+                product={product}
+                isOpen={showModal}
+                onClose={() => setShowModal(false)}
+                onAdd={handleAddToCart}
+            />
+        </>
     );
 }

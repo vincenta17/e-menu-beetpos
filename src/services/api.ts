@@ -1,14 +1,16 @@
 // API Service for E-Menu Beetpos
+import type { Product } from '../types';
 
+// API Configuration
 const BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
-// API Headers - Fill in your values here
-const API_HEADERS = {
+// Headers
+const getHeaders = () => ({
     'x-api-key': import.meta.env.VITE_API_KEY,
     'x-tenant-id': import.meta.env.VITE_TENANT_ID,
     'x-outlet-id': import.meta.env.VITE_OUTLET_ID,
     'Content-Type': 'application/json'
-};
+});
 
 // API Response Types
 export interface ApiCategory {
@@ -28,7 +30,7 @@ export async function fetchCategories(): Promise<ApiCategory[] | Error> {
     try {
         const response = await fetch(`${BASE_URL}/categories`, {
             method: 'GET',
-            headers: API_HEADERS
+            headers: getHeaders()
         });
 
         if (!response.ok) {
@@ -50,15 +52,8 @@ export interface ApiProductSize {
     priceAdd: number;
 }
 
-export interface ApiProduct {
-    id: number | string;
-    name: string;
-    description: string;
-    price: number;
-    image: string;
-    category: string;
-    categoryId?: number;
-    sizes?: ApiProductSize[];
+export interface ApiProduct extends Product {
+    categoryId?: number; // Optional
 }
 
 export interface ApiProductsResponse {
@@ -78,20 +73,19 @@ export interface ProductsQueryParams {
 
 export async function fetchProducts(params?: ProductsQueryParams): Promise<ApiProduct[]> {
     try {
-        // Build query string from params
         const queryParams = new URLSearchParams();
         if (params?.page) queryParams.append('page', params.page.toString());
         if (params?.limit) queryParams.append('limit', params.limit.toString());
         if (params?.order) queryParams.append('order', params.order);
         if (params?.search) queryParams.append('search', params.search);
-        if (params?.categoryId) queryParams.append('categoryId', params.categoryId);
+        if (params?.categoryId && params.categoryId !== 'all') queryParams.append('categoryId', params.categoryId);
 
         const queryString = queryParams.toString();
         const url = `${BASE_URL}/products${queryString ? `?${queryString}` : ''}`;
 
         const response = await fetch(url, {
             method: 'GET',
-            headers: API_HEADERS
+            headers: getHeaders()
         });
 
         if (!response.ok) {
@@ -102,8 +96,287 @@ export async function fetchProducts(params?: ProductsQueryParams): Promise<ApiPr
         return result.data || [];
     } catch (error) {
         console.error('Error fetching products:', error);
-        // Return empty array if API fails - no fallback products
         return [];
     }
 }
 
+// Transaction Types
+export interface TransactionItem {
+    productId: number | string;
+    productName: string;
+    quantity: number;
+    price: number;
+    notes?: string;
+    size?: string;
+}
+
+export interface CreateTransactionRequest {
+    tableNumber?: string;
+    tableId?: string; // Required by API
+    orderType?: 'DINEIN' | 'TAKEAWAY'; // Required by API
+    items: TransactionItem[];
+    subtotal: number;
+    tax: number;
+    total: number;
+    paymentMethod: 'qris' | 'cash' | 'card';
+}
+
+export interface TransactionResponse {
+    success: boolean;
+    data?: {
+        id: string;
+        transactionNumber: string;
+        qrCode?: string;
+        qrCodeUrl?: string; // QRIS Cont ent
+        status: 'pending' | 'paid' | 'cancelled';
+        createdAt: string;
+    };
+    message?: string;
+    error?: string;
+}
+
+// Create transaction (Real API)
+export async function createTransaction(request: CreateTransactionRequest): Promise<TransactionResponse> {
+    const TRANSACTION_API_URL = `${BASE_URL}/transactions/pos`;
+
+    // Get headers fresh
+    const headers = {
+        'x-api-key': import.meta.env.VITE_API_KEY,
+        'x-tenant-id': import.meta.env.VITE_TENANT_ID,
+        'x-outlet-id': import.meta.env.VITE_OUTLET_ID,
+        'Content-Type': 'application/json'
+    };
+
+    // Transform items to match API expected format
+    const transformedItems = request.items.map(item => ({
+        product_id: item.productId ? (typeof item.productId === 'string' ? item.productId : String(item.productId)) : null,
+        product_name: item.productName,
+        quantity: item.quantity,
+        price: item.price,
+        notes: item.notes || '',
+        size: item.size || null
+    }));
+
+    // Build request body with snake_case format that API expects
+    const requestBody = {
+        table_number: request.tableNumber || '1',
+        table_id: import.meta.env.VITE_TABEL_ID || request.tableId || '1', // Required by API - use env variable
+        order_type: request.orderType || 'DINEIN', // Required by API - must be "DINEIN"
+        items: transformedItems,
+        subtotal: request.subtotal,
+        tax: request.tax,
+        total: request.total,
+        payment_method: request.paymentMethod
+    };
+
+    try {
+        console.log('Creating transaction with body:', JSON.stringify(requestBody, null, 2));
+        console.log('Headers:', headers);
+
+        const response = await fetch(TRANSACTION_API_URL, {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify(requestBody)
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            console.error('Transaction API Error:', result);
+            console.error('Error details:', JSON.stringify(result.details, null, 2));
+            return {
+                success: false,
+                error: result.message || `HTTP error! status: ${response.status} - ${result.error || ''}`
+            };
+        }
+
+        console.log('Transaction Success:', result);
+        return {
+            success: true,
+            data: result.data
+        };
+    } catch (error) {
+        console.error('Error creating transaction:', error);
+        return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Failed to create transaction'
+        };
+    }
+}
+
+// Generate DOKU Payment (QRIS) - uses invoice_number
+export interface DokuPaymentRequest {
+    invoiceNumber: string;
+    amount: number;
+    customerName?: string;
+}
+
+export async function generateDokuPayment(request: DokuPaymentRequest): Promise<TransactionResponse> {
+    try {
+        const response = await fetch(`${BASE_URL}/payment/doku`, {
+            method: 'POST',
+            headers: getHeaders(),
+            body: JSON.stringify({
+                invoice_number: request.invoiceNumber,
+                amount: request.amount,
+                customer_name: request.customerName || 'Customer'
+            })
+        });
+
+        const result = await response.json();
+        console.log('DOKU Payment Response:', result);
+
+        if (!response.ok) {
+            return {
+                success: false,
+                error: result.message || `HTTP error! status: ${response.status}`
+            };
+        }
+
+        return {
+            success: true,
+            data: result.data
+        };
+    } catch (error) {
+        console.error('Error generating payment:', error);
+        return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Failed to generate payment'
+        };
+    }
+}
+
+// Check transaction status
+export async function checkTransactionStatus(transactionId: string): Promise<TransactionResponse> {
+    try {
+        const response = await fetch(`${BASE_URL}/transactions/${transactionId}`, {
+            method: 'GET',
+            headers: getHeaders()
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            return {
+                success: false,
+                error: result.message || `HTTP error! status: ${response.status}`
+            };
+        }
+
+        return {
+            success: true,
+            data: result.data
+        };
+    } catch (error) {
+        console.error('Error checking transaction status:', error);
+        return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Failed to check transaction status'
+        };
+    }
+}
+
+// Simulate payment (Mock)
+export async function simulateTransactionPayment(id: string): Promise<{ success: boolean }> {
+    await new Promise(resolve => setTimeout(resolve, 800));
+    console.log(`Payment simulated for ${id}`);
+    return { success: true };
+}
+
+// Subscribe to transaction updates (SSE)
+// Subscribe to transaction updates (SSE)
+export interface PaymentStatusEvent {
+    transactionId: string;
+    status: string;
+    data: {
+        invoiceNumber: string;
+        totalAmount: string;
+        paymentMethod: string;
+        paymentStatus: string;
+        transactionStatus: string;
+        updatedAt: string;
+    };
+    message: string;
+    updatedAt: string;
+}
+
+export function subscribeToTransaction(
+    transactionId: string,
+    onPaymentStatus: (data: PaymentStatusEvent['data']) => void,
+    onCompleted?: (message: string) => void,
+    onError?: (error: any) => void
+): EventSource {
+    const apiKey = encodeURIComponent(import.meta.env.VITE_API_KEY);
+    const tenantId = encodeURIComponent(import.meta.env.VITE_TENANT_ID);
+    const outletId = encodeURIComponent(import.meta.env.VITE_OUTLET_ID);
+
+    const url = `${BASE_URL}/transactions/${transactionId}/subscribe?apiKey=${apiKey}&tenantId=${tenantId}&outletId=${outletId}`;
+
+    console.log('[SSE] Connecting to:', url);
+
+    const eventSource = new EventSource(url);
+
+    // Initial connection open
+    eventSource.onopen = () => {
+        console.log('[SSE] Connection OPEN - Ready to receive events');
+    };
+
+    // Listen for "payment-status" event
+    eventSource.addEventListener('payment-status', (event) => {
+        try {
+            console.log('[SSE] ✅ Received payment-status event:', event.data);
+            const parsedData = JSON.parse(event.data);
+
+            // Checks if status is PAID or data.paymentStatus is SUCCESS/PAID
+            const isPaid = parsedData.status === 'PAID' ||
+                parsedData.data?.transactionStatus === 'PAID' ||
+                parsedData.data?.paymentStatus === 'SUCCESS';
+
+            console.log('[SSE] isPaid:', isPaid, 'hasData:', !!parsedData.data);
+
+            if (isPaid && parsedData.data) {
+                console.log('[SSE] Calling onPaymentStatus callback');
+                onPaymentStatus(parsedData.data);
+            }
+        } catch (error) {
+            console.error('[SSE] Error parsing payment-status data:', error);
+        }
+    });
+
+    // Listen for "payment-completed" event
+    eventSource.addEventListener('payment-completed', (event) => {
+        try {
+            console.log('[SSE] ✅ Received payment-completed event:', event.data);
+            const parsedData = JSON.parse(event.data);
+            if (onCompleted) {
+                onCompleted(parsedData.message || 'Payment completed');
+            }
+        } catch (error) {
+            console.error('[SSE] Error parsing payment-completed data:', error);
+        }
+    });
+
+    // Listen for "connected" event (initial connection confirmation)
+    eventSource.addEventListener('connected', (event) => {
+        console.log('[SSE] ✅ Received connected event:', event.data);
+    });
+
+    // Standard message listener (fallback for unnamed events)
+    eventSource.onmessage = (event) => {
+        console.log('[SSE] Received generic/unnamed message:', event.data);
+    };
+
+    eventSource.onerror = (error) => {
+        console.warn('[SSE] Connection error - state:', eventSource.readyState);
+        // Don't close! EventSource will auto-reconnect.
+        // Only notify error callback for logging purposes
+        if (eventSource.readyState === EventSource.CLOSED) {
+            console.error('[SSE] Connection permanently CLOSED');
+            if (onError) onError(error);
+        } else if (eventSource.readyState === EventSource.CONNECTING) {
+            console.log('[SSE] Reconnecting...');
+        }
+    };
+
+    return eventSource;
+}
