@@ -129,54 +129,68 @@ export default function PaymentPage() {
 
     // Listen for payment status updates
     const eventSourceRef = useRef<EventSource | null>(null);
-    const isPaymentSuccessRef = useRef(false);
+    // Stable reference for transaction processing status
+    const isProcessingSuccess = useRef(false);
 
     useEffect(() => {
         if (!transactionId) return;
-        // Don't create new connection if already successful
-        if (isPaymentSuccessRef.current) {
-            console.log('[PaymentPage] Already successful, skipping SSE subscription');
-            return;
-        }
-        // Also check if we already have an active connection
-        if (eventSourceRef.current) {
-            console.log('[PaymentPage] Already have active SSE connection, skipping');
+
+        // Prevent multiple connections or reconnections if already succeeded
+        if (isProcessingSuccess.current || paymentStatus === 'success') {
             return;
         }
 
-        console.log('[PaymentPage] Subscribing to transaction updates:', transactionId);
+        console.log('[PaymentPage] Initializing SSE Subscription for:', transactionId);
 
         const eventSource = subscribeToTransaction(
             transactionId,
             (data) => {
-                console.log('[PaymentPage] ✅ Payment Status PAID received:', data);
-                // Save data but DON'T close yet - wait for payment-completed
-                setSuccessData(data);
-                setPaymentStatus('success');
-                clearCart();
+                // EVENT 1: PAYMENT STATUS (CRITICAL)
+                // If we receive this, the payment is CONFIRMED.
+                console.log('[PaymentPage] ✅ Payment Status Event Received:', data);
+
+                if (!isProcessingSuccess.current) {
+                    isProcessingSuccess.current = true;
+                    setSuccessData(data);
+                    setPaymentStatus('success');
+                    clearCart();
+
+                    // Cleanup session immediately to prevent stale state on reload
+                    sessionStorage.removeItem('activeTransactionId');
+                }
             },
             (message) => {
-                console.log('[PaymentPage] ✅ Payment Completed - NOW closing SSE:', message);
-                isPaymentSuccessRef.current = true;
-                // Close connection only after payment-completed
-                eventSource.close();
-                eventSourceRef.current = null;
+                // EVENT 2: PAYMENT COMPLETED (OPTIONAL/CLOSING)
+                console.log('[PaymentPage] ✅ Payment Cleanup Event:', message);
+
+                // We just log this. The connection will be closed by the cleanup function
+                // or when the component unmounts/updates.
+                // We enforce closing here just to be clean.
+                if (eventSourceRef.current) {
+                    eventSourceRef.current.close();
+                    eventSourceRef.current = null;
+                }
             },
             (error) => {
-                console.warn('[PaymentPage] SSE Connection issue:', error);
+                console.warn('[PaymentPage] SSE Error:', error);
             },
             apiContext
         );
 
         eventSourceRef.current = eventSource;
 
+        // Robust Cleanup
         return () => {
-            console.log('[PaymentPage] Cleanup - closing EventSource');
-            eventSource.close();
-            eventSourceRef.current = null;
+            console.log('[PaymentPage] Cleanup - closing SSE connection');
+            if (eventSourceRef.current) {
+                eventSourceRef.current.close();
+                eventSourceRef.current = null;
+            }
         };
+        // Dependency array is minimal to prevent re-subscriptions.
+        // We do NOT include paymentStatus here to avoid breaking connection on state change.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [transactionId]); // Only depend on transactionId
+    }, [transactionId]);
 
     const handleBackHome = () => {
         // Redirect to original URL with query params if available
@@ -200,7 +214,17 @@ export default function PaymentPage() {
         }
     };
 
-    // Loading state - show while creating transaction
+    // SUCCESS STATE - Priority 1 (Always show if success, regardless of anything else)
+    if (paymentStatus === 'success' && successData) {
+        return (
+            <PaymentSuccessModal
+                data={successData}
+                onClose={handleBackHome}
+            />
+        );
+    }
+
+    // LOADING STATE - Priority 2
     if (paymentStatus === 'loading') {
         return (
             <div className="payment-page">
@@ -212,7 +236,7 @@ export default function PaymentPage() {
         );
     }
 
-    // Pending state - Show Iframe if URL exists
+    // PENDING STATE - Priority 3 (Show Iframe)
     if (paymentStatus === 'pending' && paymentUrl) {
         return (
             <div style={{
@@ -261,16 +285,6 @@ export default function PaymentPage() {
                     title="DOKU Payment"
                 />
             </div>
-        );
-    }
-
-    // Success state
-    if (paymentStatus === 'success' && successData) {
-        return (
-            <PaymentSuccessModal
-                data={successData}
-                onClose={handleBackHome}
-            />
         );
     }
 
