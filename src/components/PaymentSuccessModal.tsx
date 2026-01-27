@@ -45,7 +45,19 @@ export default function PaymentSuccessModal({ data, onClose }: PaymentSuccessMod
                 width: '100%',
                 boxShadow: '0 10px 25px rgba(0,0,0,0.1)'
             }}>
-                <div className="success-icon" style={{ fontSize: '4rem', marginBottom: '1rem', textAlign: 'center' }}>✅</div>
+                <div className="success-icon" style={{
+                    fontSize: '3rem',
+                    marginBottom: '1rem',
+                    textAlign: 'center',
+                    width: '80px',
+                    height: '80px',
+                    borderRadius: '50%',
+                    backgroundColor: '#e8f5e9',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    margin: '0 auto 1.5rem auto'
+                }}>✅</div>
                 <h1 style={{ marginBottom: '10px', color: '#333' }}>Pembayaran Berhasil!</h1>
                 <p style={{ color: '#666', marginBottom: '20px' }}>Terima kasih, pesanan Anda telah kami terima.</p>
 
