@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+// import { useNavigate } from 'react-router-dom';
 
 interface PaymentSuccessModalProps {
     data: {
@@ -13,13 +13,13 @@ interface PaymentSuccessModalProps {
 }
 
 export default function PaymentSuccessModal({ data, onClose }: PaymentSuccessModalProps) {
-    const navigate = useNavigate();
+    //  const navigate = useNavigate();
 
     const handleBackHome = () => {
         if (onClose) {
             onClose();
         }
-        navigate('/');
+        // distinct navigate removed to rely on parent's onClose behavior
     };
 
     return (
