@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
-import { createTransaction, generateDokuPayment, subscribeToTransaction, checkTransactionStatus, type PaymentStatusEvent, type ApiContextParams } from '../services/api';
+import { createTransaction, generateDokuPayment, subscribeToTransaction, type PaymentStatusEvent, type ApiContextParams } from '../services/api';
 import PaymentSuccessModal from '../components/PaymentSuccessModal';
 
 export default function PaymentPage() {
@@ -191,55 +191,13 @@ export default function PaymentPage() {
 
         // POLLING FALLBACK - Check status every 3 seconds to ensure we catch success
         // This is necessary because sometimes SSE might be blocked or delayed
-        const pollInterval = setInterval(async () => {
-            if (isProcessingSuccess.current) {
-                clearInterval(pollInterval);
-                return;
-            }
-
-            try {
-                const statusRes = await checkTransactionStatus(transactionId, apiContext);
-
-                if (statusRes.success && statusRes.data) {
-                    const status = statusRes.data.status?.toUpperCase();
-                    // Check for paid status (PAID or SUCCESS)
-                    if (status === 'PAID' || status === 'SUCCESS') {
-                        console.log('[PaymentPage] Polling detected success status:', status);
-
-                        // Construct success data since polling might return less detailed data than SSE
-                        const successPayload = {
-                            invoiceNumber: statusRes.data.transactionNumber || 'INV-Unknown',
-                            totalAmount: String(total), // Use local total converted to string
-                            paymentMethod: 'QRIS',
-                            paymentStatus: 'SUCCESS',
-                            transactionStatus: 'PAID',
-                            updatedAt: new Date().toISOString()
-                        };
-
-                        if (!isProcessingSuccess.current) {
-                            console.log('[PaymentPage] Applying success state from polling');
-                            isProcessingSuccess.current = true;
-                            setSuccessData(successPayload);
-                            setPaymentStatus('success');
-                            clearCart();
-                            sessionStorage.removeItem('activeTransactionId');
-                            clearInterval(pollInterval);
-                        }
-                    }
-                }
-            } catch (err) {
-                console.warn('[PaymentPage] Polling check failed:', err);
-            }
-        }, 3000);
-
         // Robust Cleanup
         return () => {
-            console.log('[PaymentPage] Cleanup - closing SSE connection and polling');
+            console.log('[PaymentPage] Cleanup - closing SSE connection');
             if (eventSourceRef.current) {
                 eventSourceRef.current.close();
                 eventSourceRef.current = null;
             }
-            clearInterval(pollInterval);
         };
         // Dependency array is minimal to prevent re-subscriptions.
         // We do NOT include paymentStatus here to avoid breaking connection on state change.

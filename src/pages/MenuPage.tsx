@@ -171,13 +171,39 @@ export default function MenuPage() {
 
     return (
         <div className="menu-page">
-            <header className="menu-header glass-card">
-                <div className="header-content">
-                    <div className="header-left">
-                        <h1 className="header-title">Menu</h1>
-                        <p className="header-subtitle">Meja #{state.tableNumber}</p>
+            <header className="menu-header glass-card" style={{ padding: '16px' }}>
+                <div className="header-content" style={{ display: 'flex', alignItems: 'center', gap: '16px', justifyContent: 'flex-start' }}>
+                    <img
+                        src="/kaixin-logo.jpg"
+                        alt="Kaixin Vegan Bistro"
+                        style={{
+                            width: '56px',
+                            height: '56px',
+                            objectFit: 'contain',
+                            borderRadius: '50%',
+                            border: '2px solid #fff',
+                            boxShadow: '0 2px 5px rgba(0,0,0,0.1)'
+                        }}
+                    />
+                    <div className="header-left" style={{ textAlign: 'left' }}>
+                        <h1 className="header-title" style={{
+                            fontSize: '1.25rem',
+                            fontWeight: 'bold',
+                            color: '#1B5E20', /* Stronger green */
+                            marginBottom: '4px',
+                            margin: 0
+                        }}>Kaixin Vegan Bistro</h1>
+                        <p className="header-subtitle" style={{
+                            fontSize: '0.95rem',
+                            display: 'inline-block',
+                            color: '#1B5E20',
+                            fontWeight: '600',
+                            marginTop: '4px',
+                            margin: 0
+                        }}>
+                            Meal Selection - Meja #{state.tableNumber}
+                        </p>
                     </div>
-                    <div className="header-logo">🍽️</div>
                 </div>
             </header>
 
