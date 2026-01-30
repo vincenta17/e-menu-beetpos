@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
 import type { OrderMode } from '../types';
-import { fetchCategories, fetchProducts, type ApiCategory, type ApiProduct, type ApiContextParams } from '../services/api';
+import { fetchCategories, fetchProducts, fetchTable, type ApiCategory, type ApiProduct, type ApiContextParams } from '../services/api';
 import ProductCard from '../components/ProductCard';
 import CategoryTabs from '../components/CategoryTabs';
 import CartButton from '../components/CartButton';
@@ -22,6 +22,7 @@ export default function MenuPage() {
     const { state, setQueryParams } = useCart();
     const hasSetParamsRef = useRef(false);
     const hasCheckedParamsRef = useRef(false);
+    const [tableName, setTableName] = useState<string | null>(null);
 
     // Parse query parameters on initial load (only once)
     useEffect(() => {
@@ -105,6 +106,25 @@ export default function MenuPage() {
                 setCategories(categoriesData);
             }
             setLoadingCategories(false);
+
+            // Fetch table name if we have a table ID
+            if (apiContext.tableId) {
+                try {
+                    console.log('Fetching table info for ID:', apiContext.tableId);
+                    const tableData = await fetchTable(apiContext.tableId, apiContext);
+                    console.log('Table fetch result:', tableData);
+
+                    if (tableData) {
+                        // Try various fields for the table name
+                        const resolvedName = tableData.name || tableData.table_number || tableData.number;
+                        if (resolvedName) {
+                            setTableName(resolvedName);
+                        }
+                    }
+                } catch (err) {
+                    console.error('Failed to fetch table name:', err);
+                }
+            }
         };
         loadCategories();
     }, [apiContext]);
@@ -201,7 +221,7 @@ export default function MenuPage() {
                             marginTop: '4px',
                             margin: 0
                         }}>
-                            Meal Selection - Meja #{state.tableNumber}
+                            {tableName ? `Meja ${tableName}` : `Meja #${state.tableNumber}`}
                         </p>
                     </div>
                 </div>

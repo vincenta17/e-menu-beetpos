@@ -72,15 +72,29 @@ export default function ProductCard({ product, onClick }: ProductCardProps) {
         setTimeout(() => setShowSuccess(false), 2000);
     };
 
+    const isPlaceholder = productImage.startsWith('data:image/svg+xml');
+
     return (
         <>
-            <div className="product-card glass-card" onClick={onClick}>
+            <div className={`product-card glass-card ${isPlaceholder ? 'no-hover' : ''}`} onClick={(e) => {
+                if (isPlaceholder) {
+                    e.preventDefault();
+                    // Optional: you can leave this empty to do nothing
+                } else {
+                    onClick();
+                }
+            }}>
                 <div className="card-image-container">
                     <img
                         src={productImage}
                         alt={product.name || 'Product'}
                         className="card-image"
                         loading="lazy"
+                        onClick={(e) => {
+                            if (isPlaceholder) {
+                                e.stopPropagation();
+                            }
+                        }}
                     />
                     <div className="card-category-badge">
                         {getCategoryEmoji(product.category)}
@@ -97,12 +111,13 @@ export default function ProductCard({ product, onClick }: ProductCardProps) {
                     <h3 className="card-title">{product.name || 'Unnamed Product'}</h3>
                     <p className="card-description">{product.description || ''}</p>
                     <div className="card-footer">
-                        <span className="card-price">{formatPrice(product.price)}</span>
-                        <button className="card-add-btn" onClick={handleAddClick}>
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <circle cx="12" cy="12" r="10" />
-                                <path d="M12 8v8M8 12h8" />
-                            </svg>
+                        <button className="card-add-btn capsule" onClick={handleAddClick}>
+                            <span className="card-price-text">{formatPrice(product.price)}</span>
+                            <div className="card-add-icon">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                    <path d="M12 6v12M6 12h12" />
+                                </svg>
+                            </div>
                         </button>
                     </div>
                 </div>

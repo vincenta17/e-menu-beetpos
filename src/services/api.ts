@@ -53,6 +53,41 @@ export async function fetchCategories(ctx?: ApiContextParams): Promise<ApiCatego
         return error instanceof Error ? error : new Error(String(error));
     }
 }
+// Table Types
+export interface ApiTable {
+    id: string;
+    name?: string;
+    table_number?: string;
+    number?: string;
+    description?: string;
+    status?: string;
+}
+
+export interface ApiTableResponse {
+    data: ApiTable;
+    message?: string;
+    status?: string;
+}
+
+// Fetch table details
+export async function fetchTable(id: string, ctx?: ApiContextParams): Promise<ApiTable | null> {
+    try {
+        const response = await fetch(`${BASE_URL}/tables/${id}`, {
+            method: 'GET',
+            headers: getHeaders(ctx)
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const result: ApiTableResponse = await response.json();
+        return result.data;
+    } catch (error) {
+        console.error('Error fetching table:', error);
+        return null;
+    }
+}
 
 // Product Types
 export interface ApiProductSize {
