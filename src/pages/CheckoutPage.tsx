@@ -54,7 +54,7 @@ export default function CheckoutPage() {
                 {/* Table Info */}
                 {state.tableNumber && (
                     <div className="checkout-section glass-card table-info-section">
-                        <span className="table-icon">🪑</span>
+                        <img src="/table-chair.svg" alt="Table" style={{ width: '48px', height: '48px', flexShrink: 0 }} />
                         <span>Meja {state.tableName || state.tableNumber}</span>
                     </div>
                 )}
