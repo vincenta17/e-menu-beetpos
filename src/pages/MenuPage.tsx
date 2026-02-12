@@ -19,10 +19,9 @@ export default function MenuPage() {
     const [missingParams, setMissingParams] = useState(false);
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
-    const { state, setQueryParams } = useCart();
+    const { state, setQueryParams, setTableName } = useCart();
     const hasSetParamsRef = useRef(false);
     const hasCheckedParamsRef = useRef(false);
-    const [tableName, setTableName] = useState<string | null>(null);
 
     // Parse query parameters on initial load (only once)
     useEffect(() => {
@@ -221,7 +220,7 @@ export default function MenuPage() {
                             marginTop: '4px',
                             margin: 0
                         }}>
-                            {tableName ? `Meja ${tableName}` : `Meja #${state.tableNumber}`}
+                            {state.tableName ? `Meja ${state.tableName}` : `Meja #${state.tableNumber}`}
                         </p>
                     </div>
                 </div>

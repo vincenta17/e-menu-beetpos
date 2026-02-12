@@ -51,6 +51,14 @@ export default function CheckoutPage() {
             </header>
 
             <div className="checkout-content">
+                {/* Table Info */}
+                {state.tableNumber && (
+                    <div className="checkout-section glass-card table-info-section">
+                        <span className="table-icon">🪑</span>
+                        <span>Meja {state.tableName || state.tableNumber}</span>
+                    </div>
+                )}
+
                 {/* Order Summary */}
                 <div className="checkout-section glass-card">
                     <h2 className="section-title">
@@ -119,13 +127,6 @@ export default function CheckoutPage() {
                     />
                 </div>
 
-                {/* Table Info */}
-                {state.tableNumber && (
-                    <div className="checkout-section glass-card table-info-section">
-                        <span className="table-icon">🪑</span>
-                        <span>Meja #{state.tableNumber}</span>
-                    </div>
-                )}
             </div>
 
             <div className="checkout-footer">

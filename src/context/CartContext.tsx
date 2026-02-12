@@ -4,6 +4,7 @@ import type { CartItem, CartState, Product, OrderMode } from '../types';
 
 type CartAction =
     | { type: 'SET_TABLE'; tableNumber: string }
+    | { type: 'SET_TABLE_NAME'; tableName: string }
     | { type: 'SET_OUTLET'; outletId: string }
     | { type: 'SET_TENANT'; tenantId: string }
     | { type: 'SET_ORDER_MODE'; orderMode: OrderMode }
@@ -16,6 +17,7 @@ type CartAction =
 interface CartContextType {
     state: CartState;
     setTable: (tableNumber: string) => void;
+    setTableName: (tableName: string) => void;
     setOutlet: (outletId: string) => void;
     setTenant: (tenantId: string) => void;
     setOrderMode: (orderMode: OrderMode) => void;
@@ -43,6 +45,7 @@ const getInitialState = (): CartState => {
     return {
         items: [],
         tableNumber: null,
+        tableName: null,
         outletId: null,
         tenantId: null,
         orderMode: null
@@ -62,6 +65,10 @@ function cartReducer(state: CartState, action: CartAction): CartState {
     switch (action.type) {
         case 'SET_TABLE':
             newState = { ...state, tableNumber: action.tableNumber };
+            break;
+
+        case 'SET_TABLE_NAME':
+            newState = { ...state, tableName: action.tableName };
             break;
 
         case 'SET_OUTLET':
@@ -156,6 +163,10 @@ export function CartProvider({ children }: { children: ReactNode }) {
         dispatch({ type: 'SET_TABLE', tableNumber });
     }, []);
 
+    const setTableName = useCallback((tableName: string) => {
+        dispatch({ type: 'SET_TABLE_NAME', tableName });
+    }, []);
+
     const setOutlet = useCallback((outletId: string) => {
         dispatch({ type: 'SET_OUTLET', outletId });
     }, []);
@@ -209,6 +220,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
         <CartContext.Provider value={{
             state,
             setTable,
+            setTableName,
             setOutlet,
             setTenant,
             setOrderMode,

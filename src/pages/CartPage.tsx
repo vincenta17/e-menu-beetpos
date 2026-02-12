@@ -62,7 +62,7 @@ export default function CartPage() {
 
             <div className="table-info glass-card">
                 <span className="table-icon">🪑</span>
-                <span>Meja #{state.tableNumber}</span>
+                <span>Meja {state.tableName || state.tableNumber}</span>
             </div>
 
             <div className="cart-items">

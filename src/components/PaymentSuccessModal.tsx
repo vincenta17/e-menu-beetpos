@@ -1,4 +1,5 @@
 // import { useNavigate } from 'react-router-dom';
+import { useCart } from '../context/CartContext';
 
 interface PaymentSuccessModalProps {
     data: {
@@ -14,6 +15,7 @@ interface PaymentSuccessModalProps {
 
 export default function PaymentSuccessModal({ data, onClose }: PaymentSuccessModalProps) {
     //  const navigate = useNavigate();
+    const { state } = useCart();
 
     const handleBackHome = () => {
         if (onClose) {
@@ -82,6 +84,12 @@ export default function PaymentSuccessModal({ data, onClose }: PaymentSuccessMod
                             {data.updatedAt ? new Date(data.updatedAt).toLocaleTimeString() : '-'}
                         </span>
                     </div>
+                    {(state.tableName || state.tableNumber) && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                            <span style={{ color: '#888', fontSize: '0.9rem' }}>Meja</span>
+                            <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>{state.tableName || state.tableNumber}</span>
+                        </div>
+                    )}
                     <div style={{ borderTop: '1px solid #eee', margin: '10px 0' }}></div>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span style={{ color: '#333', fontWeight: 600 }}>Total</span>

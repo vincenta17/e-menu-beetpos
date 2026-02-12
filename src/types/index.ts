@@ -30,6 +30,7 @@ export type OrderMode = 'DINEIN' | 'TAKEAWAY';
 export interface CartState {
   items: CartItem[];
   tableNumber: string | null;
+  tableName: string | null;
   outletId: string | null;
   tenantId: string | null;
   orderMode: OrderMode | null;
