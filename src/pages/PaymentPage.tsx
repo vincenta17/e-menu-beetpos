@@ -61,7 +61,6 @@ export default function PaymentPage() {
                 subtotal: total,
                 tax: 0,
                 total: total,
-                paymentMethod: 'qris'
             }, apiContext);
 
             if (response.success && response.data) {
@@ -82,6 +81,7 @@ export default function PaymentPage() {
                 try {
                     const paymentResponse = await generateDokuPayment({
                         invoiceNumber: txNumber,
+                        paymentMethod: 'QRIS',
                         amount: total,
                         customerName: `Table ${tableNum}`
                     }, apiContext);

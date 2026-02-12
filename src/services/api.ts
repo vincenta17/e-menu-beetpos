@@ -163,7 +163,6 @@ export interface CreateTransactionRequest {
     subtotal: number;
     tax: number;
     total: number;
-    paymentMethod: 'qris' | 'cash' | 'card';
 }
 
 export interface TransactionResponse {
@@ -212,7 +211,6 @@ export async function createTransaction(request: CreateTransactionRequest, ctx?:
         subtotal: request.subtotal,
         tax: request.tax,
         total: request.total,
-        payment_method: request.paymentMethod
     };
 
     try {
@@ -253,7 +251,8 @@ export async function createTransaction(request: CreateTransactionRequest, ctx?:
 // Generate DOKU Payment (QRIS) - uses invoice_number
 export interface DokuPaymentRequest {
     invoiceNumber: string;
-    amount: number;
+    paymentMethod: 'QRIS';
+    amount?: number;
     customerName?: string;
 }
 
@@ -264,7 +263,7 @@ export async function generateDokuPayment(request: DokuPaymentRequest, ctx?: Api
             headers: getHeaders(ctx),
             body: JSON.stringify({
                 invoice_number: request.invoiceNumber,
-                amount: request.amount,
+                payment_method: request.paymentMethod,
                 customer_name: request.customerName || 'Customer'
             })
         });
